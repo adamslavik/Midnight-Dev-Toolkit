@@ -1,0 +1,24 @@
+schema_version = "1.0.0"
+
+id = "midnight_dev_toolkit"
+version = "0.1.0"
+name = "Midnight Dev Toolkit"
+tagline = "Blender addon for exporting GLB assets to Godot with a bunch of useful tools"
+maintainer = "adamslavik"
+type = "add-on"
+
+website = "https://github.com/adamslavik/Midnight-Dev-Toolkit"
+tags = ["Import-Export", "Scene"]
+
+blender_version_min = "5.2.0"
+
+license = [
+    "SPDX:GPL-3.0-or-later",
+]
+
+copyright = [
+    "2025-2026 adamslavik",
+]
+
+[permissions]
+files = "Export GLB files to disk"
