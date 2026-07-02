@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "midnight_dev_toolkit"
-version = "0.1.2"
+version = "0.1.3"
 name = "Midnight Dev Toolkit"
 tagline = "Blender addon for exporting GLB assets to Godot with a bunch of useful tools"
 maintainer = "Adam Slavík"

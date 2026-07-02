@@ -3,12 +3,23 @@ import os
 import re
 
 from . import properties
+from . import profiles
 
 
 def _sanitize_filename(name):
     """Replace characters that are illegal in filenames on Windows/Godot."""
     cleaned = re.sub(r'[<>:"/\\|?*]', '_', name).strip()
     return cleaned or "unnamed"
+
+
+def _filter_gltf_kwargs(kwargs):
+    """Drop any keys the running Blender's glTF exporter doesn't know about,
+    so a renamed/removed option can never crash the export. Returns
+    (valid_kwargs, dropped_keys)."""
+    valid_keys = set(bpy.ops.export_scene.gltf.get_rna_type().properties.keys())
+    valid = {k: v for k, v in kwargs.items() if k in valid_keys}
+    dropped = [k for k in kwargs if k not in valid_keys]
+    return valid, dropped
 
 
 class MDT_OT_ExportGLB(bpy.types.Operator):
@@ -48,11 +59,37 @@ class MDT_OT_ExportGLB(bpy.types.Operator):
             )
             return {'CANCELLED'}
 
-        if props.export_mode == 'SINGLE':
-            return self.export_single(context, export_path, objects)
-        return self.export_batch(context, export_path, objects)
+        # Build the export settings from the asset-type profile.
+        gltf_kwargs = {'export_format': 'GLB', 'use_selection': True}
+        gltf_kwargs.update(profiles.get_profile(props.asset_type))
+        gltf_kwargs, dropped = _filter_gltf_kwargs(gltf_kwargs)
+        if dropped:
+            self.report({'WARNING'}, f"Ignored unsupported export options: {', '.join(dropped)}")
 
-    def export_single(self, context, export_path, objects):
+        # Object operators used below (select_all, etc.) require Object Mode, so
+        # switch out of Edit/Sculpt/Vertex Paint/... and restore the mode after.
+        active = context.view_layer.objects.active
+        prev_mode = active.mode if active else 'OBJECT'
+        if prev_mode != 'OBJECT':
+            try:
+                bpy.ops.object.mode_set(mode='OBJECT')
+            except RuntimeError as e:
+                self.report({'ERROR'}, f"Could not switch to Object Mode: {e}")
+                return {'CANCELLED'}
+
+        try:
+            if props.export_mode == 'SINGLE':
+                return self.export_single(context, export_path, objects, gltf_kwargs)
+            return self.export_batch(context, export_path, objects, gltf_kwargs)
+        finally:
+            if prev_mode != 'OBJECT' and active is not None:
+                context.view_layer.objects.active = active
+                try:
+                    bpy.ops.object.mode_set(mode=prev_mode)
+                except RuntimeError:
+                    pass  # object may no longer support that mode; leave in Object Mode
+
+    def export_single(self, context, export_path, objects, gltf_kwargs):
         filename = os.path.splitext(bpy.path.basename(bpy.data.filepath))[0] or "untitled"
         filepath = os.path.join(export_path, f"{_sanitize_filename(filename)}.glb")
 
@@ -64,13 +101,8 @@ class MDT_OT_ExportGLB(bpy.types.Operator):
                 obj.select_set(True)
             context.view_layer.objects.active = objects[0]
 
-            bpy.ops.export_scene.gltf(
-                filepath=filepath,
-                export_format='GLB',
-                use_selection=True,
-                export_apply=True,
-            )
-        except RuntimeError as e:
+            bpy.ops.export_scene.gltf(filepath=filepath, **gltf_kwargs)
+        except (RuntimeError, TypeError) as e:
             self.report({'ERROR'}, f"Export failed: {e}")
             return {'CANCELLED'}
         finally:
@@ -79,7 +111,7 @@ class MDT_OT_ExportGLB(bpy.types.Operator):
         self.report({'INFO'}, f"Exported: {filepath}")
         return {'FINISHED'}
 
-    def export_batch(self, context, export_path, objects):
+    def export_batch(self, context, export_path, objects, gltf_kwargs):
         original_selection = context.selected_objects[:]
         original_active = context.view_layer.objects.active
         exported = 0
@@ -90,14 +122,9 @@ class MDT_OT_ExportGLB(bpy.types.Operator):
                 context.view_layer.objects.active = obj
 
                 filepath = os.path.join(export_path, f"{_sanitize_filename(obj.name)}.glb")
-                bpy.ops.export_scene.gltf(
-                    filepath=filepath,
-                    export_format='GLB',
-                    use_selection=True,
-                    export_apply=True,
-                )
+                bpy.ops.export_scene.gltf(filepath=filepath, **gltf_kwargs)
                 exported += 1
-        except RuntimeError as e:
+        except (RuntimeError, TypeError) as e:
             self.report({'ERROR'}, f"Export failed on '{obj.name}': {e}")
             return {'CANCELLED'}
         finally:

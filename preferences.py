@@ -18,10 +18,10 @@ _SOURCE_EXTENSIONS = (".py", ".toml")
 
 
 def _read_manifest_version():
-    """Read the installed addon version from blender_manifest.toml.
+    """Read the installed addon version fresh from blender_manifest.toml.
 
-    Evaluated at import time, so after a successful update + script reload the
-    module is re-imported and this reflects the freshly copied manifest."""
+    Called on every preferences redraw (not cached), so it always reflects the
+    file currently on disk - even if a self-update didn't reload cleanly."""
     manifest = os.path.join(PACKAGE_DIR, "blender_manifest.toml")
     try:
         import tomllib
@@ -30,8 +30,6 @@ def _read_manifest_version():
     except (OSError, ValueError, ImportError):
         return "unknown"
 
-
-ADDON_VERSION = _read_manifest_version()
 
 
 def _find_manifest_dir(base):
@@ -88,15 +86,37 @@ def _install_from(root):
 
 
 def _deferred_reload():
-    """Run after the operator returns, so we don't unregister mid-execute."""
-    bpy.ops.script.reload()
+    """Reload ONLY this addon from the freshly copied files.
+
+    Runs from a timer, after the operator returns, so we don't unregister
+    ourselves mid-execute. We disable the addon, drop its modules from the
+    import cache (so Python re-reads them from disk instead of serving the old
+    cached code), then re-enable it. This is far more reliable than a global
+    script reload, which can leave an extension unregistered and 'gone'."""
+    import sys
+    import addon_utils
+
+    try:
+        addon_utils.disable(ADDON_ID, default_set=False)
+    except Exception as e:  # noqa: BLE001 - never let the timer raise
+        print(f"[Midnight Dev Toolkit] disable during update failed: {e}")
+
+    for name in [n for n in list(sys.modules) if n == ADDON_ID or n.startswith(ADDON_ID + ".")]:
+        del sys.modules[name]
+
+    try:
+        addon_utils.enable(ADDON_ID, default_set=True, persistent=True)
+        print("[Midnight Dev Toolkit] reloaded after update")
+    except Exception as e:  # noqa: BLE001
+        print(f"[Midnight Dev Toolkit] re-enable during update failed: {e}")
+
     return None  # one-shot timer
 
 
 class MDT_OT_UpdateAddon(bpy.types.Operator):
     bl_idname = "mdt.update_addon"
     bl_label = "Update Addon From Disk"
-    bl_description = "Copy the addon files from the update source and reload Blender's scripts"
+    bl_description = "Copy the addon files from the update source and reload the addon"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
@@ -124,7 +144,7 @@ class MDT_OT_UpdateAddon(bpy.types.Operator):
             self.report({'WARNING'}, "No .py/.toml files found to copy")
             return {'CANCELLED'}
 
-        self.report({'INFO'}, f"Updated {copied} file(s). Reloading scripts...")
+        self.report({'INFO'}, f"Updated {copied} file(s). Reloading addon...")
         bpy.app.timers.register(_deferred_reload, first_interval=0.1)
         return {'FINISHED'}
 
@@ -141,7 +161,7 @@ class MDT_Preferences(bpy.types.AddonPreferences):
     def draw(self, context):
         layout = self.layout
 
-        layout.label(text=f"Installed version: {ADDON_VERSION}", icon='CHECKMARK')
+        layout.label(text=f"Version on disk (live): {_read_manifest_version()}", icon='CHECKMARK')
 
         col = layout.column(align=True)
         col.label(text="Local update - point to a .zip or a source folder:")
