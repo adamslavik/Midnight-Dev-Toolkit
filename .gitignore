@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Blender extension build artifacts
+midnight_dev_toolkit-*.zip
+*.zip
