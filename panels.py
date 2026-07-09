@@ -30,14 +30,71 @@ class MDT_PT_MainPanel(bpy.types.Panel):
         box.separator()
         box.operator("mdt.export_glb", icon='FILE_TICK')
 
-        # Tools
-        box = layout.box()
-        box.label(text="Tools", icon='TOOL_SETTINGS')
-        box.operator("mdt.setup_uv", icon='UV')
+
+class MDT_PT_ToolsPanel(bpy.types.Panel):
+    bl_label = "Tools"
+    bl_idname = "MDT_PT_tools"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_parent_id = "MDT_PT_main"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.operator("mdt.setup_uv", icon='UV')
+
+
+class MDT_PT_ChannelPackerPanel(bpy.types.Panel):
+    bl_label = "RGBA Channel Packer"
+    bl_idname = "MDT_PT_channel_packer"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_parent_id = "MDT_PT_tools"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        pk = context.scene.mdt_packer
+
+        # Mode toggles first (mutually exclusive, handled in properties).
+        col = layout.column(align=True)
+        col.prop(pk, "add_only_a")
+        if not pk.add_only_a:
+            col.prop(pk, "r_is_normal")
+
+        col = layout.column(align=True)
+
+        # R / RGB slot - the channel icon leads the row (no separate label).
+        row = col.row(align=True)
+        row.label(text="", icon='IMAGE_RGB_ALPHA' if pk.add_only_a else 'RGB_RED')
+        row.template_ID(pk, "slot_r", open="image.open")
+
+        # G / B slots are hidden when the R slot already covers them.
+        if not pk.add_only_a:
+            if pk.r_is_normal:
+                col.label(text="G: filled by normal map (R+G)", icon='INFO')
+            else:
+                row = col.row(align=True)
+                row.label(text="", icon='RGB_GREEN')
+                row.template_ID(pk, "slot_g", open="image.open")
+
+            row = col.row(align=True)
+            row.label(text="", icon='RGB_BLUE')
+            row.template_ID(pk, "slot_b", open="image.open")
+
+        row = col.row(align=True)
+        row.label(text="", icon='IMAGE_ALPHA')
+        row.template_ID(pk, "slot_a", open="image.open")
+
+        layout.separator()
+        layout.prop(pk, "output_path")
+        layout.operator("mdt.pack_channels", icon='EXPORT')
 
 
 classes = (
     MDT_PT_MainPanel,
+    MDT_PT_ToolsPanel,
+    MDT_PT_ChannelPackerPanel,
 )
 
 
